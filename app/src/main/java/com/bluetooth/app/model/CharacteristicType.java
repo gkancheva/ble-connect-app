@@ -7,12 +7,9 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public enum CharacteristicType {
-    READ_WRITE ("5f6d4f53-5f52-5043-5f64-6174615f5f5f",
-            "Read/write attribute used to submit frames for tx to the device and read out frames from the device."),
-    WRITE_LENGTH ("5f6d4f53-5f52-5043-5f74-785f63746c5f",
-            "write only attribute"),
-    READ_LENGTH ("5f6d4f53-5f52-5043-5f72-785f63746c5f",
-            "Read/notify attribute. It returns the length of the frame that device wishes to transmit as a big-endian 32-bit number");
+    READ_WRITE ("5f6d4f53-5f52-5043-5f64-6174615f5f5f", "Read/write attribute. Used for reading/writing messages"),
+    WRITE_LENGTH ("5f6d4f53-5f52-5043-5f74-785f63746c5f", "Write only attribute. Used for sending information for the initial length of the message"),
+    READ_LENGTH ("5f6d4f53-5f52-5043-5f72-785f63746c5f", "Read/notify attribute. Used for reading th elength of the message");
 
     private final String uuid;
     private final String description;

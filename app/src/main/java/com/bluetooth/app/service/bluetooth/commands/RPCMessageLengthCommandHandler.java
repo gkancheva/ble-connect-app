@@ -6,7 +6,6 @@ import android.util.Log;
 
 import com.bluetooth.app.model.CharacteristicType;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.UUID;
 

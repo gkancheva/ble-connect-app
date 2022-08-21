@@ -85,14 +85,14 @@ public class BluetoothGattResponseHandler extends BluetoothGattCallback {
         Log.i(TAG, "onCharacteristicWrite: " + characteristicType);
         switch (characteristicType) {
             case WRITE_LENGTH:
-                BluetoothGattCharacteristic readLengthCharacteristic = characteristicsByUUID
-                        .get(CharacteristicType.READ_LENGTH.getUuid());
-                Log.i(TAG, "Requesting read from: " + CharacteristicType.READ_LENGTH);
-                gatt.readCharacteristic(readLengthCharacteristic);
+                Log.i(TAG, "Sending write characteristic to: " + CharacteristicType.READ_WRITE);
+                commandFactory
+                        .get(RPCCommandType.SEND_MESSAGE)
+                        .handle(characteristicsByUUID, TEST_JSON, gatt);
                 break;
             case READ_WRITE:
-                Log.i(TAG, "6. Requesting read from: " + CharacteristicType.READ_WRITE);
-                gatt.readCharacteristic(characteristic);
+                Log.i(TAG, "Requesting read from: " + CharacteristicType.READ_LENGTH);
+                gatt.readCharacteristic(characteristicsByUUID.get(CharacteristicType.READ_LENGTH.getUuid()));
                 break;
         }
     }
@@ -109,9 +109,7 @@ public class BluetoothGattResponseHandler extends BluetoothGattCallback {
                     break;
                 case READ_LENGTH:
                     Log.i(TAG, "Received characteristic read event form uuid: READ_LENGTH, value: '" + valueAsString + "'");
-                    commandFactory
-                            .get(RPCCommandType.SEND_MESSAGE_LENGTH)
-                            .handle(characteristicsByUUID, TEST_JSON, gatt);
+                    gatt.readCharacteristic(characteristicsByUUID.get(CharacteristicType.READ_WRITE.getUuid()));
                     break;
             }
         }

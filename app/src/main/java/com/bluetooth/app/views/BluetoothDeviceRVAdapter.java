@@ -1,6 +1,5 @@
 package com.bluetooth.app.views;
 
-import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothDevice;
 import android.util.Log;
 import android.view.LayoutInflater;
