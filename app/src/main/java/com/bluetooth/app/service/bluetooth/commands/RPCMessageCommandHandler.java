@@ -10,22 +10,20 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.UUID;
 
-public class RPCMessageCommandHandler extends RPCCommandHandler {
+public abstract class RPCMessageCommandHandler implements RPCCommandHandler {
 
     private static final String TAG = RPCMessageCommandHandler.class.getSimpleName();
 
-    @Override
-    public boolean handle(Map<UUID, BluetoothGattCharacteristic> characteristicsMap, String message, BluetoothGatt gatt) {
-        BluetoothGattCharacteristic rwCharacteristic = characteristicsMap
-                .get(CharacteristicType.READ_WRITE.getUuid());
+    protected boolean handle (Map<UUID, BluetoothGattCharacteristic> map, BluetoothGatt gatt, String message) {
+        BluetoothGattCharacteristic characteristic = map.get(CharacteristicType.READ_WRITE.getUuid());
         byte[] messageBytes = message.getBytes(StandardCharsets.UTF_8);
-        rwCharacteristic.setValue(messageBytes);
+        characteristic.setValue(messageBytes);
         Log.i(TAG, "Sending json object to: READ_WRITE, value: " + printByteArray(messageBytes));
-        return gatt.writeCharacteristic(rwCharacteristic);
+        return gatt.writeCharacteristic(characteristic);
     }
 
+    public abstract long getMessageLength();
+
     @Override
-    public RPCCommandType getCommandType() {
-        return RPCCommandType.SEND_MESSAGE;
-    }
+    public abstract RPCCommandType getCommandType();
 }

@@ -4,6 +4,7 @@ import android.app.Service;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
 import android.content.Intent;
 import android.util.Log;
@@ -13,24 +14,33 @@ import com.bluetooth.app.model.GattActionType;
 import com.bluetooth.app.service.bluetooth.commands.RPCCommandFactory;
 import com.bluetooth.app.service.bluetooth.commands.RPCCommandType;
 import com.bluetooth.app.service.bluetooth.connection.BleConnectionState;
+import com.bluetooth.app.service.bluetooth.output.reader.ReaderType;
+import com.bluetooth.app.service.bluetooth.output.reader.ResponseReaderFactory;
 
-import java.util.HashMap;
+import java.math.BigInteger;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+
+import static com.bluetooth.app.model.CharacteristicType.READ_WRITE;
 
 public class BluetoothGattResponseHandler extends BluetoothGattCallback {
 
     private static final String TAG = BluetoothGattResponseHandler.class.getSimpleName();
     private static final String CUSTOM_SERVICE_UUID = "5f6d4f53-5f52-5043-5f53-56435f49445f";
+    private static final String NOTIFY_DESCRIPTOR_UUID = "00002902-0000-1000-8000-00805f9b34fb";
 
-    private Map<UUID, BluetoothGattCharacteristic> characteristicsByUUID = new HashMap<>();
+    private static final RPCCommandType RPC_COMMAND_TYPE = RPCCommandType.WIFI_COMMAND;
 
-    private final String TEST_JSON = "{“id”:0,“method”:“WiFi.scan”,“src”:“infinno”}";
+    private Map<UUID, BluetoothGattCharacteristic> characteristicsByUUID = new ConcurrentHashMap<>();
 
     private final Service service;
+
+    private final StringBuilder output = new StringBuilder();
 
     private final RPCCommandFactory commandFactory = new RPCCommandFactory();
 
@@ -65,36 +75,44 @@ public class BluetoothGattResponseHandler extends BluetoothGattCallback {
 
                 initializeCharacteristicMap(gattService.getCharacteristics());
 
+                BluetoothGattCharacteristic characteristic = characteristicsByUUID.get(CharacteristicType.READ_LENGTH.getUuid());
+                subscribeForNotification(characteristic, gatt);
+
                 if (characteristicsByUUID.size() != CharacteristicType.values().length) {
                     throw new IllegalStateException("Unexpected size of characteristics");
                 }
-
-                commandFactory
-                        .get(RPCCommandType.SEND_MESSAGE_LENGTH)
-                        .handle(characteristicsByUUID, TEST_JSON, gatt);
             }
         } else {
             Log.w(TAG, "onServicesDiscovered received: " + status);
         }
     }
 
-
     @Override
     public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
         CharacteristicType characteristicType = CharacteristicType.getByUUID(characteristic.getUuid());
         Log.i(TAG, "onCharacteristicWrite: " + characteristicType);
-        switch (characteristicType) {
-            case WRITE_LENGTH:
-                Log.i(TAG, "Sending write characteristic to: " + CharacteristicType.READ_WRITE);
-                commandFactory
-                        .get(RPCCommandType.SEND_MESSAGE)
-                        .handle(characteristicsByUUID, TEST_JSON, gatt);
-                break;
-            case READ_WRITE:
-                Log.i(TAG, "Requesting read from: " + CharacteristicType.READ_LENGTH);
-                gatt.readCharacteristic(characteristicsByUUID.get(CharacteristicType.READ_LENGTH.getUuid()));
-                break;
+        if (characteristicType == CharacteristicType.WRITE_LENGTH) {
+            Log.i(TAG, "Sending write characteristic to: " + READ_WRITE);
+            commandFactory
+                    .get(RPC_COMMAND_TYPE)
+                    .handle(characteristicsByUUID, gatt);
         }
+    }
+
+    @Override
+    public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
+        Log.i(TAG, "onDescriptorWrite");
+        gatt.readDescriptor(descriptor);
+    }
+
+    @Override
+    public void onDescriptorRead(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
+        Log.i(TAG, "onDescriptorRead");
+        Log.i(TAG, "descriptor value: " + getValueAsString(descriptor.getValue()));
+        long messageLength = commandFactory.get(RPC_COMMAND_TYPE).getMessageLength();
+        commandFactory
+                .getMessageLengthHandler(messageLength)
+                .handle(characteristicsByUUID, gatt);
     }
 
     @Override
@@ -105,11 +123,20 @@ public class BluetoothGattResponseHandler extends BluetoothGattCallback {
         if (status == BluetoothGatt.GATT_SUCCESS) {
             switch (characteristicType) {
                 case READ_WRITE:
-                    Log.i(TAG, "Received characteristic read event form uuid: READ_WRITE, value: '" + valueAsString + "'");
+                    Log.i(TAG, "Received characteristic read event from uuid: READ_WRITE");
+                    output.append(new String(characteristic.getValue()));
+                    if (characteristic.getValue().length > 0) {
+                        gatt.readCharacteristic(characteristicsByUUID.get(READ_WRITE.getUuid()));
+                    } else {
+                        Objects.requireNonNull(ResponseReaderFactory
+                                .getReader(ReaderType.WIFI_READER)).read(output.toString());
+                    }
                     break;
                 case READ_LENGTH:
                     Log.i(TAG, "Received characteristic read event form uuid: READ_LENGTH, value: '" + valueAsString + "'");
-                    gatt.readCharacteristic(characteristicsByUUID.get(CharacteristicType.READ_WRITE.getUuid()));
+                    long len = new BigInteger(characteristic.getValue()).longValue();
+                    Log.i(TAG, "Length: " + len);
+                    gatt.readCharacteristic(characteristicsByUUID.get(READ_WRITE.getUuid()));
                     break;
             }
         }
@@ -117,7 +144,26 @@ public class BluetoothGattResponseHandler extends BluetoothGattCallback {
 
     @Override
     public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
-        Log.i(TAG, "onCharacteristicChanged");
+        Log.i(TAG, "onCharacteristicChanged, value: " + getValueAsString(characteristic.getValue()));
+        gatt.readCharacteristic(characteristic);
+    }
+
+    private void subscribeForNotification(BluetoothGattCharacteristic characteristic, BluetoothGatt gatt) {
+        gatt.setCharacteristicNotification(characteristic, true);
+        enableDescriptorNotification(characteristic, gatt);
+    }
+
+    private void enableDescriptorNotification(BluetoothGattCharacteristic characteristic, BluetoothGatt gatt) {
+        List<BluetoothGattDescriptor> descriptors = characteristic.getDescriptors();
+        if (descriptors == null) {
+            return;
+        }
+        descriptors.forEach(d -> {
+            if (d.getUuid().toString().equals(NOTIFY_DESCRIPTOR_UUID)) {
+                d.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+                gatt.writeDescriptor(d);
+            }
+        });
     }
 
     private void initializeCharacteristicMap(List<BluetoothGattCharacteristic> characteristics) {
@@ -130,12 +176,7 @@ public class BluetoothGattResponseHandler extends BluetoothGattCallback {
 
     private String getValueAsString(byte[] data) {
         if (data != null && data.length > 0) {
-            Log.i(TAG, "Length: " + data.length);
-            final StringBuilder stringBuilder = new StringBuilder(data.length);
-            for(byte byteChar : data)
-                stringBuilder.append(String.format("%02X ", byteChar));
-            Log.i(TAG, "stringBuilder: " + stringBuilder);
-            return new String(data) + "\n" + stringBuilder;
+            return new String(data);
         }
         return "";
     }

@@ -1,6 +1,7 @@
 package com.bluetooth.app.service.bluetooth.commands;
 
 public enum RPCCommandType {
-    SEND_MESSAGE_LENGTH,
-    SEND_MESSAGE;
+    MESSAGE_LENGTH,
+    WIFI_COMMAND,
+    SWITCH_TOGGLE_COMMAND
 }
